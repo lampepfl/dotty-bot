@@ -1,32 +1,42 @@
-package dotty.tools.bot
+package dotty.bot
 
-import org.junit.Assert._
-import org.junit.Test
-
-import io.circe._
+import dotty.bot.model.Drone
+import dotty.bot.model.Github._
 import io.circe.generic.auto._
-import io.circe.syntax._
 import io.circe.parser.decode
-
-import model.Github._
-import model.Drone
-import org.http4s.client.blaze._
 import org.http4s.client.Client
-import scalaz.concurrent.Task
+import org.http4s.client.blaze._
+import org.junit.Assert._
+import org.junit.{AfterClass, BeforeClass, Ignore, Test}
 
-class PRServiceTests extends PullRequestService {
+object PullRequestServiceTests {
+  private[this] var myHttpClient: Client = _
+
+  private implicit def httpClient: Client = {
+    assertNotNull(myHttpClient)
+    myHttpClient
+  }
+
+  @BeforeClass
+  def setup() = {
+    myHttpClient = PooledHttp1Client()
+  }
+
+  @AfterClass
+  def tearDown() = {
+    httpClient.shutdownNow()
+  }
+}
+
+class PullRequestServiceTests extends PullRequestService {
+  import PullRequestService._
+  import PullRequestServiceTests.httpClient
+
   val githubUser         = sys.env("GITHUB_USER")
   val githubToken        = sys.env("GITHUB_TOKEN")
   val droneToken         = sys.env("DRONE_TOKEN")
   val githubClientId     = sys.env("GITHUB_CLIENT_ID")
   val githubClientSecret = sys.env("GITHUB_CLIENT_SECRET")
-
-  private def withClient[A](f: Client => Task[A]): A = {
-    val httpClient = PooledHttp1Client()
-    val ret = f(httpClient).run
-    httpClient.shutdownNow()
-    ret
-  }
 
   def getResource(r: String): String =
     Option(getClass.getResourceAsStream(r)).map(scala.io.Source.fromInputStream)
@@ -40,7 +50,7 @@ class PRServiceTests extends PullRequestService {
       case Left(ex) => throw ex
     }
 
-    assert(issue.pull_request.isDefined, "missing pull request")
+    assertTrue("missing pull request", issue.pull_request.isDefined)
   }
 
   @Test def canUnmarshalIssueComment = {
@@ -50,15 +60,16 @@ class PRServiceTests extends PullRequestService {
       case Left(ex) => throw ex
     }
 
-    assert(
-      issueComment.comment.body == "@dotty-bot: could you recheck this please?",
-      s"incorrect body: ${issueComment.comment.body}"
+    assertEquals(
+      s"incorrect body: ${issueComment.comment.body}",
+      "@dotty-bot: could you recheck this please?",
+      issueComment.comment.body
     )
   }
 
   @Test def canGetAllCommitsFromPR = {
     val issueNbr = 1941 // has 2 commits: https://github.com/lampepfl/dotty/pull/1941/commits
-    val List(c1, c2) = withClient(implicit client => getCommits(issueNbr))
+    val List(c1, c2) = getCommits(issueNbr).run
 
     assertEquals(
       "Represent untyped operators as Ident instead of Name",
@@ -73,82 +84,86 @@ class PRServiceTests extends PullRequestService {
 
   @Test def canGetMoreThan100Commits = {
     val issueNbr = 1840 // has >100 commits: https://github.com/lampepfl/dotty/pull/1840/commits
-    val numberOfCommits = withClient(implicit client => getCommits(issueNbr)).length
+    val numberOfCommits = getCommits(issueNbr).run.length
 
-    assert(
-      numberOfCommits > 100,
-      s"PR 1840, should have a number of commits greater than 100, but was: $numberOfCommits"
+    assertTrue(
+      s"PR 1840, should have a number of commits greater than 100, but was: $numberOfCommits",
+      numberOfCommits > 100
     )
   }
 
   @Test def canGetComments = {
-    val comments: List[Comment] = withClient(getComments(2136, _))
-
-    assert(comments.find(_.user.login == Some("odersky")).isDefined,
-           "Could not find Martin's comment on PR 2136")
+    val comments: List[Comment] = getComments(2136, httpClient).run
+    assertTrue(
+      "Could not find Martin's comment on PR 2136",
+      comments.exists(_.user.login.contains("odersky"))
+    )
   }
 
   @Test def canCheckCLA = {
     val validUserCommit = Commit("sha-here", Author(Some("felixmulder")), Author(Some("felixmulder")), CommitInfo(""))
-    val statuses: List[CommitStatus] = withClient(checkCLA(validUserCommit :: Nil, _))
+    val statuses: List[CommitStatus] = checkCLA(validUserCommit :: Nil).run
 
-    assert(statuses.length == 1, s"wrong number of valid statuses: got ${statuses.length}, expected 1")
+    assertEquals(
+      s"wrong number of valid statuses: got ${statuses.length}, expected 1",
+       1, statuses.length
+    )
   }
 
   @Test def canSetStatus = {
     val sha = "fa64b4b613fe5e78a5b4185b4aeda89e2f1446ff"
     val status = Invalid("smarter", Commit(sha, Author(Some("smarter")), Author(Some("smarter")), CommitInfo("")))
 
-    val statuses: List[StatusResponse] = withClient(sendStatuses(status :: Nil, _))
+    val statuses: List[StatusResponse] = sendStatuses(status :: Nil, httpClient).run
 
-    assert(
-      statuses.length == 1,
-      s"assumed one status response would be returned, got: ${statuses.length}"
+    assertEquals(
+      s"assumed one status response would be returned, got: ${statuses.length}",
+      1, statuses.length
     )
 
-    assert(
-      statuses.head.state == "failure",
-      s"status set had wrong state, expected 'failure', got: ${statuses.head.state}"
+    assertEquals(
+      s"status set had wrong state, expected 'failure', got: ${statuses.head.state}",
+      "failure", statuses.head.state
     )
   }
 
   @Test def canGetStatus = {
     val sha = "fa64b4b613fe5e78a5b4185b4aeda89e2f1446ff"
     val commit = Commit(sha, Author(None), Author(None), CommitInfo(""))
-    val status = withClient(getStatus(commit, _)).head
+    val status = getStatus(commit, httpClient).run.head
 
-    assert(status.sha == sha, "someting wong")
+    assertEquals(sha, status.sha)
   }
 
   @Test def canPostReview = {
     val invalidUsers = "felixmulder" :: "smarter" :: Nil
     val commit = Commit("", Author(Some("smarter")), Author(Some("smarter")), CommitInfo("Added stuff"))
-    val resBody =
-      withClient(sendInitialComment(2281, invalidUsers, commit :: Nil, false)(_))
+    val resBody = sendInitialComment(2281, invalidUsers, commit :: Nil, newContributors = false).run
 
-    assert(
+    assertTrue(
+      s"Body of review was not as expected:\n$resBody",
       resBody.contains("We want to keep history") &&
       resBody.contains("Could you folks please sign the CLA?") &&
-      resBody.contains("Have an awesome day!"),
-      s"Body of review was not as expected:\n${resBody}"
+      resBody.contains("Have an awesome day!")
     )
   }
 
   @Test def canStartAndStopBuild = {
-    val build = withClient(implicit client => Drone.startBuild(1921, droneToken))
-    assert(build.status == "pending" || build.status == "building")
-    val killed = withClient(implicit client => Drone.stopBuild(1921, droneToken))
-    assert(killed, "Couldn't kill build")
+    val build = Drone.startBuild(1871, droneToken).run
+    assertTrue(build.status == "pending" || build.status == "building")
+    val killed = Drone.stopBuild(build.number, droneToken).run
+    assertTrue(s"Couldn't kill build ${build.number}", killed)
   }
 
-  @Test def canUnderstandWhenToRestartBuild = {
+  // FIXME Trying to restart a build that does not exists
+  @Ignore def canUnderstandWhenToRestartBuild = {
     val json = getResource("/test-mention.json")
     val issueComment: IssueComment = decode[IssueComment](json) match {
       case Right(is: IssueComment) => is
       case Left(ex) => throw ex
     }
 
-    assert(respondToComment(issueComment).run.status.code == 200)
+    assertEquals(200, respondToComment(issueComment).run.status.code)
   }
 
   @Test def canTellUserWhenNotUnderstanding = {
@@ -158,11 +173,11 @@ class PRServiceTests extends PullRequestService {
       case Left(ex) => throw ex
     }
 
-    assert(respondToComment(issueComment).run.status.code == 200)
+    assertEquals(200, respondToComment(issueComment).run.status.code)
   }
 
   @Test def canGetContributors = {
-    val contributors = withClient(getContributors(_))
-    assert(contributors.contains("felixmulder"))
+    val contributors = getContributors.run
+    assertTrue(contributors.contains("felixmulder"))
   }
 }

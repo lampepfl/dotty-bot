@@ -1,8 +1,9 @@
-package dotty.tools.bot.util
+package dotty.bot.util
 
 import org.http4s._
+import org.http4s.headers.{Accept, Authorization}
+
 import scalaz.concurrent.Task
-import org.http4s.headers.{ Accept, Authorization }
 
 object HttpClientAux {
   def uriFromString(url: String): Task[Uri] =

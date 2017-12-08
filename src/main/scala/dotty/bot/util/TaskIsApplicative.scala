@@ -1,7 +1,5 @@
-package dotty.tools.bot
-package util
+package dotty.bot.util
 
-import cats.syntax.applicative._
 import scalaz.concurrent.Task
 
 object TaskIsApplicative {

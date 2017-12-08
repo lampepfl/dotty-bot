@@ -1,17 +1,12 @@
-package dotty.tools
-package bot
-package model
+package dotty.bot.model
 
-import io.circe._
+import dotty.bot.util.HttpClientAux
 import io.circe.generic.auto._
-import io.circe.syntax._
-
 import org.http4s._
 import org.http4s.circe._
 import org.http4s.client.Client
 
 import scalaz.concurrent.Task
-import bot.util.HttpClientAux
 
 object Drone {
   import HttpClientAux._
@@ -33,15 +28,10 @@ object Drone {
     s"$baseUrl/repos/lampepfl/dotty/builds/$id/$subId"
 
   def stopBuild(id: Int, token: String)(implicit client: Client): Task[Boolean] = {
-    def resToBoolean(res: Response): Task[Boolean] = Task.now {
-      res.status.code >= 200 && res.status.code < 400
+    client.fetch(delete(job(id, 1)).withOauth2(token)) { res =>
+      val isSuccessful = res.status.code >= 200 && res.status.code < 400
+      Task.now(isSuccessful)
     }
-
-    val responses = List(1, 2, 3, 4).map { subId =>
-      client.fetch(delete(job(id, subId)).withOauth2(token))(resToBoolean)
-    }
-
-    Task.gatherUnordered(responses).map(xs => xs.exists(_ == true))
   }
 
   def startBuild(id: Int, token: String)(implicit client: Client): Task[Build] =

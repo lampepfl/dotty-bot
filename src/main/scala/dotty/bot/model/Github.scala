@@ -1,5 +1,4 @@
-package dotty.tools.bot
-package model
+package dotty.bot.model
 
 object Github {
   case class Issue(

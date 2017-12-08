@@ -1,29 +1,23 @@
-package dotty.tools
-package bot
+package dotty.bot
 
-import org.http4s.{ Status => _, _ }
-import org.http4s.client.blaze._
-import org.http4s.client.Client
-import org.http4s.headers.{ Accept, Authorization }
-
-import cats.syntax.applicative._
-import scalaz.concurrent.Task
-import scala.util.control.NonFatal
-import scala.Function.tupled
-
-import io.circe._
+import dotty.bot.model.Drone
+import dotty.bot.model.Github._
+import dotty.bot.util.HttpClientAux._
 import io.circe.generic.auto._
 import io.circe.syntax._
 import org.http4s.circe._
+import org.http4s.client.Client
+import org.http4s.client.blaze._
 import org.http4s.dsl._
 import org.http4s.util._
+import org.http4s.{Status => _, _}
 
-import model.Github._
-import model.Drone
-import bot.util.TaskIsApplicative._
-import bot.util.HttpClientAux._
+import scala.Function.tupled
+import scala.util.control.NonFatal
+import scalaz.concurrent.Task
 
 trait PullRequestService {
+  import PullRequestService._
 
   /** Username for authorized admin */
   def githubUser: String
@@ -75,13 +69,6 @@ trait PullRequestService {
 
   private[this] val droneContext = "continuous-integration/drone/pr"
 
-  private final case class CLASignature(
-    user: String,
-    signed: Boolean,
-    version: String,
-    currentVersion: String
-  )
-
   private[this] val githubUrl = "https://api.github.com"
   private[this] def withGithubSecret(url: String, extras: String*): String =
     s"$url?client_id=$githubClientId&client_secret=$githubClientSecret" + extras.mkString("&", "&", "")
@@ -106,18 +93,15 @@ trait PullRequestService {
   def contributorsUrl: String =
     withGithubSecret("https://api.github.com/repos/lampepfl/dotty/contributors")
 
-  sealed trait CommitStatus {
-    def commit: Commit
-    def isValid: Boolean
-  }
-  final case class Valid(user: Option[String], commit: Commit) extends CommitStatus { def isValid = true }
-  final case class Invalid(user: String, commit: Commit) extends CommitStatus { def isValid = false }
-  final case class CLAServiceDown(user: String, commit: Commit) extends CommitStatus { def isValid = false }
-  final case class MissingUser(commit: Commit) extends CommitStatus { def isValid = false }
-  final case class InvalidPrevious(users: List[String], commit: Commit) extends CommitStatus { def isValid = false }
-
   /** Partitions invalid and valid commits */
   def checkCLA(xs: List[Commit])(implicit client: Client): Task[List[CommitStatus]] = {
+    case class CLASignature(
+      user: String,
+      signed: Boolean,
+      version: String,
+      currentVersion: String
+    )
+
     def checkUser(user: String): Task[Commit => CommitStatus] = {
       val claStatus = for {
         claRes <- client.expect(get(claUrl(user)))(jsonOf[CLASignature])
@@ -178,19 +162,17 @@ trait PullRequestService {
     val value = header.value
 
     value
-      .split(',')
-      .collect {
-        case ExtractLink(url, kind) if kind == "next" =>
-          url
-      }
-      .headOption
+      .split(',').collectFirst {
+      case ExtractLink(url, kind) if kind == "next" =>
+        url
+    }
   }
 
   /** Get all contributors from GitHub */
   def getContributors(implicit client: Client): Task[Set[String]] =
     for {
       authors <- client.expect(get(contributorsUrl))(jsonOf[List[Author]])
-      logins  =  authors.map(_.login).flatten
+      logins  =  authors.flatMap(_.login)
     } yield logins.toSet
 
   /** Ordered from earliest to latest */
@@ -299,7 +281,7 @@ trait PullRequestService {
   }
 
   def checkFreshPR(issue: Issue): Task[Response] = {
-    implicit val httpClient = PooledHttp1Client()
+    implicit val httpClient: Client = PooledHttp1Client()
 
     for {
       commits  <- getCommits(issue.number)
@@ -319,7 +301,7 @@ trait PullRequestService {
           setStatus(statuses.last, httpClient)
       }
 
-      authors  =  commits.map(_.author.login).flatten.toSet
+      authors  =  commits.flatMap(_.author.login).toSet
       contribs <- getContributors
       newContr =  !authors.forall(contribs.contains)
       _        <- sendInitialComment(issue.number, invalidUsers, commits, newContr)
@@ -372,7 +354,7 @@ trait PullRequestService {
     .map(_.forall(identity))
 
   def checkSynchronize(issue: Issue): Task[Response] = {
-    implicit val client = PooledHttp1Client()
+    implicit val client: Client = PooledHttp1Client()
 
     def extractFailures(c: List[CommitStatus]): List[String] = c.collect {
       case Invalid(user, _) =>
@@ -420,7 +402,7 @@ trait PullRequestService {
     }
 
   def restartCI(issue: Issue): Task[Response] = {
-    implicit val client = PooledHttp1Client()
+    implicit val client: Client = PooledHttp1Client()
 
     def restartedComment: Comment = {
       import scala.util.Random
@@ -447,7 +429,7 @@ trait PullRequestService {
   }
 
   def cannotUnderstand(line: String, issueComment: IssueComment): Task[Response] = {
-    implicit val client = PooledHttp1Client()
+    implicit val client: Client = PooledHttp1Client()
     val comment = Comment(Author(None), {
       s"""Hey, sorry - I could not understand what you meant by:
          |
@@ -498,4 +480,16 @@ trait PullRequestService {
     extractMention(issueComment.comment.body)
       .map(interpretMention(_, issueComment))
       .getOrElse(Ok("Nothing to do here, move along!"))
+}
+
+object PullRequestService {
+  sealed trait CommitStatus {
+    def commit: Commit
+    def isValid: Boolean
+  }
+  final case class Valid(user: Option[String], commit: Commit) extends CommitStatus { def isValid = true }
+  final case class Invalid(user: String, commit: Commit) extends CommitStatus { def isValid = false }
+  final case class CLAServiceDown(user: String, commit: Commit) extends CommitStatus { def isValid = false }
+  final case class MissingUser(commit: Commit) extends CommitStatus { def isValid = false }
+  final case class InvalidPrevious(users: List[String], commit: Commit) extends CommitStatus { def isValid = false }
 }

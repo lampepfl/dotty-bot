@@ -1,7 +1,7 @@
-package dotty.tools.bot
+package dotty.bot
 
-import org.http4s.server.{ Server, ServerApp }
 import org.http4s.server.blaze._
+import org.http4s.server.{Server, ServerApp}
 
 import scalaz.concurrent.Task
 
