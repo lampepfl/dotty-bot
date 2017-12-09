@@ -1,14 +1,15 @@
 package dotty.bot
 
+import dotty.bot.PullRequestService._
 import dotty.bot.model.Drone
 import dotty.bot.model.Github._
-import dotty.bot.PullRequestService._
 import io.circe.generic.auto._
 import io.circe.parser.decode
 import org.http4s.client.Client
 import org.http4s.client.blaze._
 import org.junit.Assert._
-import org.junit.{AfterClass, BeforeClass, Ignore, Test}
+import org.junit.{Ignore, Test}
+
 import scalaz.concurrent.Task
 
 class PullRequestServiceTests extends PullRequestService {

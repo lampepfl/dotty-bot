@@ -1,11 +1,12 @@
 package dotty.bot
 
 import org.http4s.server.blaze._
-import org.http4s.server.{Server, ServerApp}
+import org.http4s.util.ProcessApp
 
 import scalaz.concurrent.Task
+import scalaz.stream.Process
 
-object Main extends ServerApp with PullRequestService {
+object Main extends ProcessApp with PullRequestService {
 
   val githubUser         = sys.env("GITHUB_USER")
   val githubToken        = sys.env("GITHUB_TOKEN")
@@ -15,12 +16,12 @@ object Main extends ServerApp with PullRequestService {
   val port               = sys.env("PORT").toInt
 
   /** Services mounted to the server */
-  final val services = prService
+  final def services = prService
 
-  override def server(args: List[String]): Task[Server] = {
+  override def process(args: List[String]): Process[Task, Nothing] = {
     BlazeBuilder
       .bindHttp(port, "0.0.0.0")
       .mountService(services, "/api")
-      .start
+      .serve
   }
 }

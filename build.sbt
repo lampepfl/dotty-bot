@@ -14,8 +14,8 @@ lazy val `dotty-bot` = project
     ),
 
     libraryDependencies ++= {
-      val circeVersion = "0.7.0"
-      val http4sVersion = "0.15.3"
+      val circeVersion = "0.8.0"
+      val http4sVersion = "0.16.6"
       Seq(
         "com.novocode" % "junit-interface" % "0.11" % Test,
         "ch.qos.logback" % "logback-classic" % "1.1.7",

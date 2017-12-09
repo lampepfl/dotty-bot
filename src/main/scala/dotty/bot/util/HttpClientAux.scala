@@ -11,10 +11,10 @@ object HttpClientAux {
 
   implicit class RicherTask(val task: Task[Request]) extends AnyVal {
     def withOauth2(token: String): Task[Request] =
-      task.map(_.putHeaders(new Authorization(new OAuth2BearerToken(token))))
+      task.map(_.putHeaders(Authorization(Credentials.Token(AuthScheme.Bearer, token))))
 
     def withAuth(user: String, pass: String): Task[Request] =
-      task.map(_.putHeaders(new Authorization(BasicCredentials(user, pass))))
+      task.map(_.putHeaders(Authorization(BasicCredentials(user, pass))))
   }
 
   private[this] lazy val previewAcceptHeader =
