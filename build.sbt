@@ -1,6 +1,7 @@
 inThisBuild(List(
   organization := "ch.epfl.lamp",
-  scalaVersion := "2.12.4"
+  scalaVersion := "2.12.4",
+  version      := "0.1.0-SNAPSHOT"
 ))
 
 lazy val `dotty-bot` = project
