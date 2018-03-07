@@ -371,7 +371,7 @@ trait PullRequestService {
       statuses <- checkCLA(commits)
       invalid  =  statuses.filterNot(_.isValid)
       _        <- sendStatuses(invalid, client)
-      _        <- cancelBuilds(commits.dropRight(1))
+      // _        <- cancelBuilds(commits.dropRight(1))
 
       // Set final commit status based on `invalid`:
       _ <- {
