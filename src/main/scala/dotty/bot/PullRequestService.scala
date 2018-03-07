@@ -178,14 +178,15 @@ trait PullRequestService {
   /** Ordered from earliest to latest */
   def getCommits(issueNbr: Int)(implicit httpClient: Client): Task[List[Commit]] = {
     def makeRequest(url: String): Task[List[Commit]] =
-      for {
-        res <- httpClient.fetch(get(url)) { res =>
-          val link = CaseInsensitiveString("Link")
-          val next = findNext(res.headers.get(link)).map(makeRequest).getOrElse(Task.now(Nil))
+      httpClient.fetch(get(url)) { res =>
+        val link = CaseInsensitiveString("Link")
+        val next = findNext(res.headers.get(link)).map(makeRequest).getOrElse(Task.now(Nil))
 
-          res.as[List[Commit]](jsonOf[List[Commit]]).flatMap(commits => next.map(commits ++ _))
-        }
-      } yield res
+        for {
+          commits     <- res.as(jsonOf[List[Commit]])
+          nextCommits <- next
+        } yield commits ::: nextCommits
+      }
 
     makeRequest(commitsUrl(issueNbr))
   }
@@ -348,10 +349,10 @@ trait PullRequestService {
           cancellable =  statuses.filter(status => status.state == "pending" && status.context == droneContext)
           runningJobs =  cancellable.map(_.target_url.split('/').last.toInt)
           cancelled   <- Task.gatherUnordered(runningJobs.map(Drone.stopBuild(_, droneToken)))
-        } yield cancelled.forall(identity)
+        } yield !cancelled.contains(false)
       }
     }
-    .map(_.forall(identity))
+    .map(!_.contains(false))
 
   def checkSynchronize(issue: Issue): Task[Response] = {
     implicit val client: Client = PooledHttp1Client()
