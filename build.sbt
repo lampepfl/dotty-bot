@@ -1,6 +1,6 @@
 inThisBuild(List(
   organization := "ch.epfl.lamp",
-  scalaVersion := "2.12.4",
+  scalaVersion := "2.12.6",
   version      := "0.1.0-SNAPSHOT"
 ))
 
@@ -14,22 +14,18 @@ lazy val `dotty-bot` = project
       "-Xfatal-warnings"
     ),
 
-    libraryDependencies ++= {
-      val circeVersion = "0.8.0"
-      val http4sVersion = "0.16.6"
-      Seq(
-        "com.novocode" % "junit-interface" % "0.11" % Test,
-        "ch.qos.logback" % "logback-classic" % "1.1.7",
-        "io.circe" %% "circe-generic" % circeVersion,
-        "io.circe" %% "circe-parser" % circeVersion,
-        "org.http4s" %% "http4s-dsl" % http4sVersion,
-        "org.http4s" %% "http4s-blaze-server" % http4sVersion,
-        "org.http4s" %% "http4s-blaze-client" % http4sVersion,
-        "org.http4s" %% "http4s-circe" % http4sVersion
-      )
-    },
+    libraryDependencies ++= Seq(
+      "com.lihaoyi" %% "cask" % "0.1.9",     // http server
+      "com.lihaoyi" %% "requests" % "0.1.4", // http client
+
+      "com.novocode" % "junit-interface" % "0.11" % Test
+    ),
 
     testOptions += Tests.Argument(TestFrameworks.JUnit, "-v"),
+
+    fork in run := true,
+    cancelable in Global := true,
+
 
     // specify main and ignore tests when assembling
     mainClass in assembly := Some("dotty.bot.Main"),

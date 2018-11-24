@@ -1,8 +1,8 @@
 package dotty.bot
 
 import dotty.bot.PullRequestService._
-import dotty.bot.model.Drone
-import dotty.bot.model.Github._
+import dotty.bot.models.Drone
+import dotty.bot.models.Github._
 import io.circe.generic.auto._
 import io.circe.parser.decode
 import org.http4s.client.Client
